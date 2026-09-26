@@ -1,0 +1,10 @@
+config_version=5
+
+[application]
+
+config/name="Ultravox Client SDK"
+config/features=PackedStringArray("4.5")
+
+[audio]
+
+driver/enable_input=true
