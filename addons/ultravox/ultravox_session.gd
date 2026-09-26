@@ -182,6 +182,9 @@ var _call_generation := 0
 
 ## [param backend] replaces the default [UltravoxLiveKitBackend], e.g. for tests.
 func _init(backend: UltravoxRoomBackend = null) -> void:
+	# Calls stall if their connection stops being serviced, so they continue while the game is
+	# paused unless the session's process mode is changed.
+	process_mode = Node.PROCESS_MODE_ALWAYS
 	_backend = backend if backend else UltravoxLiveKitBackend.new()
 	_backend.connected.connect(_on_room_connected)
 	_backend.connection_failed.connect(_on_room_connection_failed)

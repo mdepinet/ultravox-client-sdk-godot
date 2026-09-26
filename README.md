@@ -150,6 +150,7 @@ These are set on the `UltravoxSession` node, most of them in the Inspector:
 - `agent_audio_player` and `agent_audio_bus`: see above.
 - `echo_cancellation`, `noise_suppression`, `auto_gain_control`: WebRTC audio processing for
   the mic (all on by default; each requires `LiveKitAudioProcessingModule`).
+- `process_mode`: defaults to `PROCESS_MODE_ALWAYS` so calls continue while the game is paused.
 - `mic_stream`: the `AudioStream` that provides the user's audio. Defaults to an
   `AudioStreamMicrophone`. Set it to another stream to feed the call recorded or generated audio.
 
