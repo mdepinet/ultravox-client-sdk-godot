@@ -2,6 +2,7 @@ extends GutTest
 ## End-to-end tests against the real Ultravox API and the godot-livekit backend. Skipped unless
 ## ULTRAVOX_API_KEY is set. Each test creates (and pays for) a short call.
 
+const AcousticEcho := preload("res://test/support/acoustic_echo.gd")
 const _API_URL := "https://api.ultravox.ai/api/calls"
 const _TIMEOUT := 30.0
 const Status := UltravoxSession.Status
@@ -111,3 +112,22 @@ func test_client_tool_round_trip() -> void:
 	session.send_text("What is the secret word?")
 	await wait_until(func() -> bool: return "pineapple" in _final_agent_text(), _TIMEOUT)
 	assert_eq([invocations.size(), "pineapple" in _final_agent_text()], [1, true], str(session.transcripts))
+
+
+func test_echo_cancellation_keeps_agent_from_hearing_itself() -> void:
+	if not ClassDB.class_exists(&"LiveKitAudioProcessingModule"):
+		pending("the installed godot-livekit lacks LiveKitAudioProcessingModule")
+		return
+	var echo: AcousticEcho = add_child_autofree(AcousticEcho.new(session))
+	session.mic_stream = echo.mic_stream
+	var join_url := await _create_call({
+		"systemPrompt": "Start the call by telling the user a four sentence story about a dragon.",
+	})
+	session.join_call(join_url)
+	await wait_until(func() -> bool: return "dragon" in _final_agent_text(), _TIMEOUT)
+	# Give any echoed speech time to be transcribed.
+	await wait_seconds(3)
+	var user_texts := session.transcripts.filter(
+		func(t: UltravoxTranscript) -> bool: return t.speaker == UltravoxTranscript.Role.USER
+	).map(func(t: UltravoxTranscript) -> String: return t.text)
+	assert_eq([user_texts, "dragon" in _final_agent_text()], [[], true])
