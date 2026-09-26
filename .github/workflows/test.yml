@@ -18,7 +18,11 @@ jobs:
           unzip -q godot.zip -d "$RUNNER_TEMP"
           echo "GODOT=$RUNNER_TEMP/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
       - name: Install dependencies
-        run: scripts/setup.sh
+        # godot-livekit's Linux build links against its screen capture dependencies.
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libpipewire-0.3-0 libwayland-client0 libx11-6 libxext6 libxinerama1
+          scripts/setup.sh
       - name: Run tests
         # Integration tests are skipped unless the repository provides this secret.
         env:

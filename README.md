@@ -12,7 +12,7 @@ WebRTC transport Ultravox calls use.
 
 | Platform | Status |
 | --- | --- |
-| Linux (x86_64), Windows (x86_64), macOS (arm64, x86_64) | Supported (Linux is tested). |
+| Linux (x86_64), Windows (x86_64), macOS (arm64, x86_64) | Supported (Linux is tested). On Linux, godot-livekit's release build requires PipeWire, Wayland, and X11 client libraries. |
 | Android (arm64) | godot-livekit ships Android binaries, so this may work, but it hasn't been tested. |
 | Web, iOS | Not supported. godot-livekit doesn't support them yet. |
 

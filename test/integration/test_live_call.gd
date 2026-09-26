@@ -12,10 +12,9 @@ var _original_treat_engine_errors_as: int
 
 
 func should_skip_script():
+	# A missing godot-livekit fails the tests instead, since it likely means a broken setup.
 	if not OS.get_environment("ULTRAVOX_API_KEY"):
 		return "ULTRAVOX_API_KEY is not set"
-	if not UltravoxLiveKitBackend.is_available():
-		return "godot-livekit is not installed"
 	return false
 
 
