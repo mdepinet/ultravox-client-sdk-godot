@@ -88,6 +88,17 @@ func test_mic_audio_reaches_agent() -> void:
 	assert_string_contains(_final_agent_text(), "paris")
 
 
+func test_server_ending_call_is_not_an_error() -> void:
+	session.mic_stream = AudioStreamGenerator.new()
+	var errors: Array = []
+	session.error.connect(func(message: String) -> void: errors.append(message))
+	var join_url := await _create_call({"systemPrompt": "Say hi.", "maxDuration": "8s"})
+	session.join_call(join_url)
+	await wait_until(func() -> bool: return session.status == Status.LISTENING, _TIMEOUT)
+	await wait_until(func() -> bool: return session.status == Status.DISCONNECTED, _TIMEOUT)
+	assert_eq([session.status, errors], [Status.DISCONNECTED, []])
+
+
 func test_client_tool_round_trip() -> void:
 	session.mic_stream = AudioStreamGenerator.new()
 	var invocations: Array = []

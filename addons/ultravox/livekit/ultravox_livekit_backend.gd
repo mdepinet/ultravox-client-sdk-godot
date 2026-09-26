@@ -5,8 +5,9 @@ extends UltravoxRoomBackend
 ##
 ## Microphone audio is captured from a muted audio bus, optionally passed through WebRTC's audio
 ## processing (echo cancellation, noise suppression and gain control, when the installed
-## godot-livekit build provides LiveKitAudioProcessingModule), and published to the call. Agent
-## audio plays through an [AudioStreamGenerator] on the session's agent audio player.
+## godot-livekit build provides LiveKitAudioProcessingModule), and published to the call from a
+## dedicated audio thread. Agent audio plays through an [AudioStreamGenerator] on the session's
+## agent audio player.
 
 ## The sample rate audio is exchanged with LiveKit at.
 const _SAMPLE_RATE := 48000
@@ -17,6 +18,8 @@ const _CAPTURE_BUFFER_SECONDS := 0.5
 ## agent audio is only moved into it once per frame.
 const _AGENT_BUFFER_SECONDS := 0.5
 const _MASTER_BUS := &"Master"
+## How often the audio thread moves captured audio to LiveKit.
+const _AUDIO_THREAD_INTERVAL_USEC := 5000
 
 ## Warns once per run rather than once per call.
 static var _warned_missing_apm := false
@@ -37,7 +40,11 @@ var _mic_resampler: _Resampler
 var _mic_pending := PackedFloat32Array()
 var _mic_level := 0.0
 
+var _audio_thread: Thread
+var _audio_thread_running := false
+
 var _apm: Object
+var _stream_delay_ms := 0
 var _reference_capture: AudioEffectCapture
 var _reference_resampler: _Resampler
 var _reference_pending := PackedFloat32Array()
@@ -92,11 +99,8 @@ func disconnect_room() -> void:
 
 
 func poll() -> void:
-	if not _connected:
-		return
-	_pump_reference()
-	_pump_mic()
-	_pump_agent_audio()
+	if _connected:
+		_pump_agent_audio()
 
 
 func is_reconnecting() -> bool:
@@ -144,6 +148,9 @@ func get_agent_level() -> float:
 
 
 func _on_room_connected() -> void:
+	# godot-livekit also emits connected when the room's connection state recovers.
+	if _connected:
+		return
 	_connected = true
 	_setup_mic()
 	connected.emit()
@@ -215,6 +222,12 @@ func _setup_mic() -> void:
 	_session.add_child(_mic_player, false, Node.INTERNAL_MODE_BACK)
 	_mic_player.play()
 
+	# Audio processing and LiveKit's (blocking) capture calls take several milliseconds per
+	# second of audio, which would otherwise come out of the game's frame budget.
+	_audio_thread_running = true
+	_audio_thread = Thread.new()
+	_audio_thread.start(_run_audio_thread, Thread.PRIORITY_HIGH)
+
 
 func _setup_audio_processing() -> void:
 	var options := {
@@ -243,10 +256,18 @@ func _setup_audio_processing() -> void:
 	_reference_capture.buffer_length = _CAPTURE_BUFFER_SECONDS
 	AudioServer.add_bus_effect(AudioServer.get_bus_index(_MASTER_BUS), _reference_capture)
 	_reference_resampler = _Resampler.new(AudioServer.get_mix_rate(), _SAMPLE_RATE)
+	# Echo in the mic signal lags its reference by roughly the output plus input latency.
+	_stream_delay_ms = int(AudioServer.get_output_latency() * 2000.0)
 
 
 func _teardown_mic() -> void:
+	if _audio_thread:
+		_audio_thread_running = false
+		_audio_thread.wait_to_finish()
+		_audio_thread = null
 	if _mic_player:
+		# Stopped first since removing its (muted) bus would otherwise route it to Master until freed.
+		_mic_player.stop()
 		_mic_player.queue_free()
 		_mic_player = null
 	if _mic_bus_name:
@@ -268,6 +289,13 @@ func _teardown_mic() -> void:
 	_mic_level = 0.0
 
 
+func _run_audio_thread() -> void:
+	while _audio_thread_running:
+		_pump_reference()
+		_pump_mic()
+		OS.delay_usec(_AUDIO_THREAD_INTERVAL_USEC)
+
+
 func _pump_reference() -> void:
 	if not _reference_capture or not _apm:
 		return
@@ -286,8 +314,7 @@ func _pump_mic() -> void:
 	if _mic_pending.size() < _FRAME_SAMPLES:
 		return
 	if _apm and _reference_capture:
-		# Echo in the mic signal lags its reference by roughly the output plus input latency.
-		_apm.set_stream_delay_ms(int(AudioServer.get_output_latency() * 2000.0))
+		_apm.set_stream_delay_ms(_stream_delay_ms)
 	var offset := 0
 	var sum_squares := 0.0
 	while _mic_pending.size() - offset >= _FRAME_SAMPLES:

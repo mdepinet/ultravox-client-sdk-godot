@@ -392,8 +392,13 @@ func _handle_socket_message(text: String) -> void:
 func _handle_socket_close(code: int, reason: String) -> void:
 	if _is_stopped():
 		return
-	# Godot reports -1 for connections that didn't close cleanly.
 	var closed_normally := code == 1000 or code == 1005
+	if code == -1:
+		# Godot reports -1 when no close frame was processed. Over TLS that includes the server's
+		# prompt close after a normal call end: Godot discards a close frame that arrives in the
+		# same read as the connection closing. The server closes the socket to end calls, so a
+		# healthy media connection means the close was most likely intentional.
+		closed_normally = _room_connected and not _backend.is_reconnecting()
 	if not closed_normally:
 		error.emit("Session socket closed abnormally. code=%d reason=%s" % [code, reason])
 	elif _backend.is_reconnecting():

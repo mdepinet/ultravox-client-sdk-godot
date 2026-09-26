@@ -237,16 +237,26 @@ func test_removing_session_from_tree_leaves_call() -> void:
 	session.free()
 
 
-func test_server_ending_call_normally_disconnects_without_error() -> void:
-	await _join_and_connect()
-	server.close(1000)
-	await wait_until(func() -> bool: return session.status == Status.DISCONNECTED, _TIMEOUT)
-	assert_eq([errors, backend.disconnect_count], [[], 1])
+func test_server_ending_call_disconnects_without_error() -> void:
+	var cases := [
+		["close frame", func() -> void: server.close(1000)],
+		# Godot can lose the close frame of a promptly closed TLS connection.
+		["lost close frame with healthy media", func() -> void: server.drop()],
+	]
+	for case in cases:
+		await _join_and_connect()
+		case[1].call()
+		await wait_until(func() -> bool: return session.status == Status.DISCONNECTED, _TIMEOUT)
+		assert_eq([errors, session.status], [[], Status.DISCONNECTED], case[0])
 
 
 func test_socket_failures_are_reported() -> void:
 	var cases := [
-		["abnormal close", func() -> void: server.drop(), "Session socket closed abnormally"],
+		["error code", func() -> void: server.close(1011, "oops"), "Session socket closed abnormally. code=1011 reason=oops"],
+		["lost close frame while reconnecting", func() -> void:
+			backend.reconnecting = true
+			server.drop(),
+			"Session socket closed abnormally. code=-1 reason="],
 		["close while reconnecting", func() -> void:
 			backend.reconnecting = true
 			server.close(1000),
@@ -258,8 +268,15 @@ func test_socket_failures_are_reported() -> void:
 		await _join_and_connect()
 		case[1].call()
 		await wait_until(func() -> bool: return session.status == Status.DISCONNECTED, _TIMEOUT)
-		assert_eq(errors.size(), 1, case[0])
-		assert_string_starts_with(errors[0] if errors else "", case[2], case[0])
+		assert_eq(errors, [case[2]], case[0])
+
+
+func test_socket_loss_before_room_connects_is_reported() -> void:
+	session.join_call(server.join_url())
+	await wait_until(server.is_client_connected, _TIMEOUT)
+	server.drop()
+	await wait_until(func() -> bool: return session.status == Status.DISCONNECTED, _TIMEOUT)
+	assert_eq(errors, ["Session socket closed abnormally. code=-1 reason="])
 
 
 func test_room_failures_are_reported() -> void:
