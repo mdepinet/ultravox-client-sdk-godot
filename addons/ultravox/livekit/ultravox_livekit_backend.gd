@@ -300,35 +300,38 @@ func _pump_reference() -> void:
 	if not _reference_capture or not _apm:
 		return
 	_reference_pending = _read_capture(_reference_capture, _reference_resampler, _reference_pending)
-	var offset := 0
-	while _reference_pending.size() - offset >= _FRAME_SAMPLES:
-		_apm.process_reverse_stream(_reference_pending.slice(offset, offset + _FRAME_SAMPLES), _SAMPLE_RATE, 1)
-		offset += _FRAME_SAMPLES
-	_reference_pending = _reference_pending.slice(offset)
+	var whole := _whole_frames_size(_reference_pending)
+	if whole > 0:
+		_apm.process_reverse_stream(_reference_pending.slice(0, whole), _SAMPLE_RATE, 1)
+		_reference_pending = _reference_pending.slice(whole)
 
 
 func _pump_mic() -> void:
 	if not _mic_capture or not _audio_source:
 		return
 	_mic_pending = _read_capture(_mic_capture, _mic_resampler, _mic_pending)
-	if _mic_pending.size() < _FRAME_SAMPLES:
+	var whole := _whole_frames_size(_mic_pending)
+	if whole == 0:
 		return
-	if _apm and _reference_capture:
-		_apm.set_stream_delay_ms(_stream_delay_ms)
-	var offset := 0
+	var audio := _mic_pending.slice(0, whole)
+	_mic_pending = _mic_pending.slice(whole)
+	if _apm:
+		if _reference_capture:
+			_apm.set_stream_delay_ms(_stream_delay_ms)
+		var processed: PackedFloat32Array = _apm.process_stream(audio, _SAMPLE_RATE, 1)
+		if processed.size() == whole:
+			audio = processed
 	var sum_squares := 0.0
-	while _mic_pending.size() - offset >= _FRAME_SAMPLES:
-		var frame := _mic_pending.slice(offset, offset + _FRAME_SAMPLES)
-		offset += _FRAME_SAMPLES
-		if _apm:
-			var processed: PackedFloat32Array = _apm.process_stream(frame, _SAMPLE_RATE, 1)
-			if processed.size() == _FRAME_SAMPLES:
-				frame = processed
-		for sample in frame:
-			sum_squares += sample * sample
-		_audio_source.capture_frame(frame, _SAMPLE_RATE, 1, _FRAME_SAMPLES)
-	_mic_level = clampf(sqrt(sum_squares / offset) * 2.0, 0.0, 1.0)
-	_mic_pending = _mic_pending.slice(offset)
+	for sample in audio:
+		sum_squares += sample * sample
+	_mic_level = clampf(sqrt(sum_squares / whole) * 2.0, 0.0, 1.0)
+	# LiveKit's direct capture mode requires exactly 10ms per call.
+	for offset in range(0, whole, _FRAME_SAMPLES):
+		_audio_source.capture_frame(audio.slice(offset, offset + _FRAME_SAMPLES), _SAMPLE_RATE, 1, _FRAME_SAMPLES)
+
+
+static func _whole_frames_size(audio: PackedFloat32Array) -> int:
+	return audio.size() - audio.size() % _FRAME_SAMPLES
 
 
 ## Appends the mono, resampled contents of [param capture] to [param pending], returning the result.
