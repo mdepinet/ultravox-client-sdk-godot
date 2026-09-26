@@ -210,10 +210,6 @@ func _setup_mic() -> void:
 	_local_track = ClassDB.class_call_static(&"LiveKitLocalAudioTrack", &"create", "audio", _audio_source)
 	if _mic_muted:
 		_local_track.mute()
-	_room.get_local_participant().publish_track(
-		_local_track,
-		{"source": ClassDB.class_get_integer_constant(&"LiveKitTrack", &"SOURCE_MICROPHONE")},
-	)
 
 	_mic_player = AudioStreamPlayer.new()
 	_mic_player.name = "UltravoxMicPlayer"
@@ -222,11 +218,11 @@ func _setup_mic() -> void:
 	_session.add_child(_mic_player, false, Node.INTERNAL_MODE_BACK)
 	_mic_player.play()
 
-	# Audio processing and LiveKit's (blocking) capture calls take several milliseconds per
-	# second of audio, which would otherwise come out of the game's frame budget.
+	# Publishing the track and audio processing both block for long enough (tens of ms up front,
+	# then several ms per second of audio) to otherwise cause frame hitches.
 	_audio_thread_running = true
 	_audio_thread = Thread.new()
-	_audio_thread.start(_run_audio_thread, Thread.PRIORITY_HIGH)
+	_audio_thread.start(_run_audio_thread.bind(_room.get_local_participant()), Thread.PRIORITY_HIGH)
 
 
 func _setup_audio_processing() -> void:
@@ -289,7 +285,11 @@ func _teardown_mic() -> void:
 	_mic_level = 0.0
 
 
-func _run_audio_thread() -> void:
+func _run_audio_thread(local_participant: Object) -> void:
+	local_participant.publish_track(
+		_local_track,
+		{"source": ClassDB.class_get_integer_constant(&"LiveKitTrack", &"SOURCE_MICROPHONE")},
+	)
 	while _audio_thread_running:
 		_pump_reference()
 		_pump_mic()
