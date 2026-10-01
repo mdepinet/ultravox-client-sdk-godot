@@ -70,7 +70,9 @@ func _render_transcripts() -> void:
 	for transcript in session.transcripts:
 		var speaker := "Agent" if transcript.speaker == UltravoxTranscript.Role.AGENT else "You"
 		var color := "#8da5f3" if transcript.speaker == UltravoxTranscript.Role.AGENT else "#f3d38d"
-		_transcript_view.append_text("[color=%s]%s:[/color] %s\n" % [color, speaker, transcript.text.strip_edges()])
+		# Escaped since agent text can contain brackets (e.g. "[laughs]") that BBCode would parse.
+		var text := transcript.text.strip_edges().replace("[", "[lb]")
+		_transcript_view.append_text("[color=%s]%s:[/color] %s\n" % [color, speaker, text])
 
 
 func _build_ui() -> void:

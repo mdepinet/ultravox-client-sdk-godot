@@ -15,9 +15,10 @@ signal disconnected(reason: String)
 signal data_received(data: PackedByteArray)
 
 
-## Connects to the room given by the server's room_info message. [param host] is a node in the
-## scene tree that may parent any nodes the backend needs (e.g. audio players).
-func connect_room(_url: String, _token: String, _host: Node) -> void:
+## Connects to the room given by the server's room_info message, for [param session]. Any nodes
+## the backend needs (e.g. audio players) should be children of [param node_parent], which is in
+## the scene tree and keeps processing while the game is paused.
+func connect_room(_url: String, _token: String, _session: UltravoxSession, _node_parent: Node) -> void:
 	push_error("UltravoxRoomBackend.connect_room is not implemented")
 
 

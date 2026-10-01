@@ -140,7 +140,7 @@ const _MAX_DATA_CHANNEL_MESSAGE_BYTES := 1024
 @export var auto_gain_control := true
 ## The stream providing the user's audio. Defaults to an [AudioStreamMicrophone], which requires
 ## the audio/driver/enable_input project setting. Takes effect at the next [method join_call].
-var mic_stream: AudioStream
+@export var mic_stream: AudioStream
 
 ## The session's current status.
 var status: Status:
@@ -157,17 +157,24 @@ var transcripts: Array[UltravoxTranscript]:
 		return result
 
 ## Whether the user's mic is currently muted for the session. (Does not inspect hardware state.)
+## Setting it is equivalent to [method mute_mic] or [method unmute_mic].
 var is_mic_muted: bool:
 	get:
 		return _mic_muted
+	set(value):
+		_set_mic_muted(value)
 
 ## Whether the user's speaker (i.e. agent output audio) is currently muted for the session. (Does
-## not inspect system volume or hardware state.)
+## not inspect system volume or hardware state.) Setting it is equivalent to [method mute_speaker]
+## or [method unmute_speaker].
 var is_speaker_muted: bool:
 	get:
 		return _speaker_muted
+	set(value):
+		_set_speaker_muted(value)
 
 var _backend: UltravoxRoomBackend
+var _pump: _Pump
 var _status := Status.DISCONNECTED
 var _transcripts: Array[UltravoxTranscript] = []
 var _registered_tools: Dictionary[String, Callable] = {}
@@ -182,9 +189,8 @@ var _call_generation := 0
 
 ## [param backend] replaces the default [UltravoxLiveKitBackend], e.g. for tests.
 func _init(backend: UltravoxRoomBackend = null) -> void:
-	# Calls stall if their connection stops being serviced, so they continue while the game is
-	# paused unless the session's process mode is changed.
-	process_mode = Node.PROCESS_MODE_ALWAYS
+	_pump = _Pump.new(self)
+	add_child(_pump, false, Node.INTERNAL_MODE_FRONT)
 	_backend = backend if backend else UltravoxLiveKitBackend.new()
 	_backend.connected.connect(_on_room_connected)
 	_backend.connection_failed.connect(_on_room_connection_failed)
@@ -192,7 +198,8 @@ func _init(backend: UltravoxRoomBackend = null) -> void:
 	_backend.data_received.connect(_on_room_data_received)
 
 
-func _process(_delta: float) -> void:
+## Services the call's connection and audio. Called by [_Pump] every frame.
+func _poll() -> void:
 	if _socket:
 		_poll_socket()
 	if _room_started:
@@ -345,7 +352,8 @@ func get_mic_level() -> float:
 
 
 ## The agent's current audio level, from 0 to 1, e.g. for animating a character's mouth. 0 while
-## muted or not in a call.
+## muted or not in a call. It's measured as the agent is heard, so it reflects the
+## [member agent_audio_player]'s volume and, for 2D and 3D players, its distance attenuation.
 func get_agent_level() -> float:
 	return _backend.get_agent_level() if _room_connected else 0.0
 
@@ -389,7 +397,7 @@ func _handle_socket_message(text: String) -> void:
 		_handle_data_message(message)
 		return
 	_room_started = true
-	_backend.connect_room(str(message.get("roomUrl", "")), str(message.get("token", "")), self)
+	_backend.connect_room(str(message.get("roomUrl", "")), str(message.get("token", "")), self, _pump)
 
 
 func _handle_socket_close(code: int, reason: String) -> void:
@@ -399,8 +407,10 @@ func _handle_socket_close(code: int, reason: String) -> void:
 	if code == -1:
 		# Godot reports -1 when no close frame was processed. Over TLS that includes the server's
 		# prompt close after a normal call end: Godot discards a close frame that arrives in the
-		# same read as the connection closing. The server closes the socket to end calls, so a
-		# healthy media connection means the close was most likely intentional.
+		# same read as the connection closing
+		# (https://github.com/godotengine/godot/issues/107442#issuecomment-5842216123). The server
+		# closes the socket to end calls, so a healthy media connection means the close was most
+		# likely intentional.
 		closed_normally = _room_connected and not _backend.is_reconnecting()
 	if not closed_normally:
 		error.emit("Session socket closed abnormally. code=%d reason=%s" % [code, reason])
@@ -580,3 +590,20 @@ static func _with_query_params(url: String, params: Dictionary) -> String:
 	for key in params:
 		pairs.append("%s=%s" % [key.uri_encode(), str(params[key]).uri_encode()])
 	return parts[0] + "?" + "&".join(pairs)
+
+
+## Services a session's call every frame. Calls stall if their connection isn't serviced, so this
+## keeps processing while the game is paused, leaving the session's own process_mode to its user.
+## It also parents the session's internal audio players, so their audio continues too.
+class _Pump:
+	extends Node
+
+	var _session: UltravoxSession
+
+	func _init(session: UltravoxSession) -> void:
+		_session = session
+		name = "UltravoxPump"
+		process_mode = Node.PROCESS_MODE_ALWAYS
+
+	func _process(_delta: float) -> void:
+		_session._poll()

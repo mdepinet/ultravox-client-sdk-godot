@@ -300,9 +300,29 @@ func test_mute_state_is_applied_and_reported() -> void:
 	session.toggle_speaker_mute()
 	session.toggle_mic_mute()
 	session.unmute_speaker()
-	assert_eq_deep(events, [["mic", true], ["speaker", true], ["mic", false], ["speaker", false]])
-	session.mute_mic()
+	session.is_mic_muted = true
+	session.is_speaker_muted = true
+	session.is_speaker_muted = false
+	assert_eq_deep(events, [
+		["mic", true], ["speaker", true], ["mic", false], ["speaker", false],
+		["mic", true], ["speaker", true], ["speaker", false],
+	])
 	assert_eq([backend.mic_muted, backend.speaker_muted, session.is_mic_muted, session.is_speaker_muted], [true, false, true, false])
+
+
+func test_calls_are_serviced_whatever_the_session_process_mode() -> void:
+	# Disabling the session stands in for pausing the game, which would also pause the test runner.
+	session.process_mode = Node.PROCESS_MODE_DISABLED
+	await _join_and_connect()
+	server.close(1000)
+	await wait_until(func() -> bool: return session.status == Status.DISCONNECTED, _TIMEOUT)
+	assert_eq([session.status, errors], [Status.DISCONNECTED, []])
+
+
+func test_sdk_version_matches_plugin_cfg() -> void:
+	var plugin := ConfigFile.new()
+	assert_eq(plugin.load("res://addons/ultravox/plugin.cfg"), OK)
+	assert_eq(plugin.get_value("plugin", "version", ""), UltravoxSession.SDK_VERSION)
 
 
 func test_audio_levels_are_zero_outside_calls() -> void:

@@ -25,6 +25,7 @@ const _AUDIO_THREAD_INTERVAL_USEC := 5000
 static var _warned_missing_apm := false
 
 var _session: UltravoxSession
+var _node_parent: Node
 var _room: Object
 var _connected := false
 var _reconnecting := false
@@ -62,15 +63,16 @@ static func is_available() -> bool:
 	return ClassDB.class_exists(&"LiveKitRoom")
 
 
-func connect_room(url: String, token: String, host: Node) -> void:
+func connect_room(url: String, token: String, session: UltravoxSession, node_parent: Node) -> void:
 	if not is_available():
 		connection_failed.emit(
 			"The godot-livekit GDExtension is not installed. See the Ultravox addon's README."
 		)
 		return
-	_session = host as UltravoxSession
-	_mic_muted = _session.is_mic_muted if _session else false
-	_speaker_muted = _session.is_speaker_muted if _session else false
+	_session = session
+	_node_parent = node_parent
+	_mic_muted = session.is_mic_muted
+	_speaker_muted = session.is_speaker_muted
 	_room = ClassDB.instantiate(&"LiveKitRoom")
 	_room.connected.connect(_on_room_connected)
 	_room.connection_failed.connect(_on_room_connection_failed)
@@ -96,6 +98,7 @@ func disconnect_room() -> void:
 		_room.disconnect_from_room()
 		_room = null
 	_session = null
+	_node_parent = null
 
 
 func poll() -> void:
@@ -187,7 +190,7 @@ func _on_track_unsubscribed(track: Object, _publication: Object, _participant: O
 
 
 func _setup_mic() -> void:
-	var mic_stream: AudioStream = _session.mic_stream if _session else null
+	var mic_stream := _session.mic_stream
 	if mic_stream == null:
 		if not ProjectSettings.get_setting("audio/driver/enable_input", false):
 			push_error(
@@ -215,7 +218,7 @@ func _setup_mic() -> void:
 	_mic_player.name = "UltravoxMicPlayer"
 	_mic_player.stream = mic_stream
 	_mic_player.bus = _mic_bus_name
-	_session.add_child(_mic_player, false, Node.INTERNAL_MODE_BACK)
+	_node_parent.add_child(_mic_player)
 	_mic_player.play()
 
 	# Publishing the track and audio processing both block for long enough (tens of ms up front,
@@ -349,7 +352,7 @@ func _read_capture(capture: AudioEffectCapture, resampler: _Resampler, pending: 
 
 
 func _setup_agent_player() -> void:
-	var player: Node = _session.agent_audio_player if _session else null
+	var player: Node = _session.agent_audio_player
 	if player and not (player is AudioStreamPlayer or player is AudioStreamPlayer2D or player is AudioStreamPlayer3D):
 		push_error("Ultravox: agent_audio_player must be an AudioStreamPlayer, AudioStreamPlayer2D or AudioStreamPlayer3D.")
 		player = null
@@ -358,7 +361,7 @@ func _setup_agent_player() -> void:
 		player = AudioStreamPlayer.new()
 		player.name = "UltravoxAgentPlayer"
 		player.bus = _session.agent_audio_bus
-		_session.add_child(player, false, Node.INTERNAL_MODE_BACK)
+		_node_parent.add_child(player)
 	_agent_player = player
 
 	# A dedicated bus (sending to the player's own) lets get_agent_level() read the agent's volume.
@@ -367,14 +370,18 @@ func _setup_agent_player() -> void:
 	var bus_idx := _add_bus(_agent_bus_name)
 	AudioServer.set_bus_send(bus_idx, _agent_player_original_bus)
 	player.bus = _agent_bus_name
+	_start_agent_playback(_SAMPLE_RATE)
 
+
+## (Re)starts the agent player's generator at [param mix_rate].
+func _start_agent_playback(mix_rate: int) -> void:
 	var generator := AudioStreamGenerator.new()
-	generator.mix_rate = _SAMPLE_RATE
+	generator.mix_rate = mix_rate
 	generator.buffer_length = _AGENT_BUFFER_SECONDS
-	player.stream = generator
-	player.play()
-	player.stream_paused = _speaker_muted
-	_agent_playback = player.get_stream_playback()
+	_agent_player.stream = generator
+	_agent_player.play()
+	_agent_player.stream_paused = _speaker_muted
+	_agent_playback = _agent_player.get_stream_playback()
 
 
 func _teardown_agent_player() -> void:
@@ -393,8 +400,13 @@ func _teardown_agent_player() -> void:
 
 
 func _pump_agent_audio() -> void:
-	if _agent_stream and _agent_playback:
-		_agent_stream.poll(_agent_playback)
+	if not _agent_stream or not _agent_playback:
+		return
+	# The stream reports its rate once audio arrives; playing it at another rate would shift pitch.
+	var rate: int = _agent_stream.get_sample_rate()
+	if rate > 0 and rate != int(_agent_player.stream.mix_rate):
+		_start_agent_playback(rate)
+	_agent_stream.poll(_agent_playback)
 
 
 static func _add_bus(bus_name: String) -> int:

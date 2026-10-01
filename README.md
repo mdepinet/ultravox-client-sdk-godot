@@ -1,6 +1,6 @@
 # Ultravox Client SDK (Godot)
 
-This is the Godot client library for [Ultravox](https://ultravox.ai). It lets games and apps built
+This is an unofficial Godot client library for [Ultravox](https://ultravox.ai). It lets games and apps built
 with Godot 4.5+ hold real-time voice conversations with Ultravox agents. For example, an NPC can
 talk with the player, with its voice playing from the NPC's position in the world.
 
@@ -35,10 +35,14 @@ macOS > Privacy > Microphone Usage Description**.
 When players use speakers rather than headphones, the agent's voice (and other game audio)
 reaches the microphone, and the agent may respond to itself. WebRTC's echo cancellation prevents
 this. The SDK uses it automatically when godot-livekit provides the `LiveKitAudioProcessingModule`
-class. Current godot-livekit releases don't include it yet. Until they do, build godot-livekit
-with that class added (a small binding over the LiveKit C++ SDK's `AudioProcessingModule`), or
-tell players to wear headphones. Without the class, the SDK logs a warning once and continues
-without echo cancellation, noise suppression, or gain control.
+class. That class was added to godot-livekit after its v0.3.3 release. Until a release includes it,
+build godot-livekit from its `main` branch, or tell players to wear headphones. Without the class,
+the SDK logs a warning once and continues without echo cancellation, noise suppression, or gain
+control.
+
+Releases up to v0.3.3 also end the game if LiveKit reports an error while capturing microphone
+audio, which `main` fixes too. The most common cause, audio frames of the wrong size, can't happen
+with this SDK, which always sends exact 10 ms frames.
 
 ## Quick start
 
@@ -51,10 +55,9 @@ func _ready() -> void:
     session.status_changed.connect(func(status): print("Status: ", UltravoxSession.Status.keys()[status]))
     session.transcripts_changed.connect(func(): print(session.transcripts.back()))
     session.join_call(join_url)
-
-func _exit_tree() -> void:
-    session.leave_call()
 ```
+
+The session leaves its call automatically when it leaves the scene tree.
 
 Join URLs come from creating a call with the Ultravox API. Create calls on your server, because
 the API key must never ship inside your game. See the [docs](https://docs.ultravox.ai) for more
@@ -84,7 +87,7 @@ reason with `push_error`.
 | `DISCONNECTED` | The session is not connected and not attempting to connect. This is the initial state. |
 | `DISCONNECTING` | The client is disconnecting from the session. |
 | `CONNECTING` | The client is attempting to connect to the session. |
-| `IDLE` | The client is connected to the session and the server is warming up. |
+| `IDLE` | The server has disconnected from the call. |
 | `LISTENING` | The client is connected and the server is listening for voice input. |
 | `THINKING` | The client is connected and the server is considering its response. The user can still interrupt. |
 | `SPEAKING` | The client is connected and the server is playing response audio. The user can interrupt as needed. |
@@ -111,7 +114,11 @@ session.agent_audio_player = $Npc/VoicePlayer  # an AudioStreamPlayer3D
 
 The SDK replaces that player's stream during calls. `session.get_agent_level()` and
 `session.get_mic_level()` return current audio levels from 0 to 1. Use them for speech
-indicators or simple mouth animation.
+indicators or simple mouth animation. The agent level is measured as the agent is heard, so it
+includes the player's volume and its distance attenuation: a faraway NPC's level is low.
+
+Calls keep running while the game is paused, whatever the session's `process_mode`, and so does
+the default agent player. An `agent_audio_player` you provide follows its own `process_mode`.
 
 ## Client tools
 
@@ -138,8 +145,8 @@ session.register_tool_implementation("openDoor", func(params: Dictionary) -> Str
 - `set_output_medium(medium)`: switches the agent between voice and text output
   (`UltravoxTranscript.Medium`).
 - `send_data(message)`: sends any [data message](https://docs.ultravox.ai/datamessages).
-- `mute_mic()`, `unmute_mic()`, `toggle_mic_mute()`, `is_mic_muted`: control the user's mic.
-- `mute_speaker()`, `unmute_speaker()`, `toggle_speaker_mute()`, `is_speaker_muted`: control
+- `mute_mic()`, `unmute_mic()`, `toggle_mic_mute()`, `is_mic_muted` (settable): control the user's mic.
+- `mute_speaker()`, `unmute_speaker()`, `toggle_speaker_mute()`, `is_speaker_muted` (settable): control
   the agent's audio.
 
 ## Configuration
@@ -150,7 +157,6 @@ These are set on the `UltravoxSession` node, most of them in the Inspector:
 - `agent_audio_player` and `agent_audio_bus`: see above.
 - `echo_cancellation`, `noise_suppression`, `auto_gain_control`: WebRTC audio processing for
   the mic (all on by default; each requires `LiveKitAudioProcessingModule`).
-- `process_mode`: defaults to `PROCESS_MODE_ALWAYS` so calls continue while the game is paused.
 - `mic_stream`: the `AudioStream` that provides the user's audio. Defaults to an
   `AudioStreamMicrophone`. Set it to another stream to feed the call recorded or generated audio.
 

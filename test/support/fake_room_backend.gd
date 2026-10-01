@@ -14,7 +14,7 @@ var mic_level := 0.0
 var agent_level := 0.0
 
 
-func connect_room(url: String, token: String, _host: Node) -> void:
+func connect_room(url: String, token: String, _session: UltravoxSession, _node_parent: Node) -> void:
 	connect_args = [url, token]
 
 
