@@ -77,7 +77,11 @@ func test_text_round_trip_plays_agent_audio() -> void:
 
 
 func test_mic_audio_reaches_agent() -> void:
-	session.mic_stream = AudioStreamWAV.load_from_file("res://test/fixtures/capital_of_france.wav")
+	var question := AudioStreamWAV.load_from_file("res://test/fixtures/capital_of_france.wav")
+	# Repeated so a slow start (e.g. on a busy CI runner) can't clip the only copy of the question.
+	question.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	question.loop_end = int(question.get_length() * question.mix_rate)
+	session.mic_stream = question
 	var join_url := await _create_call({
 		"systemPrompt": "Answer the user's questions in one word.",
 		"firstSpeakerSettings": {"user": {}},
