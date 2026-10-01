@@ -14,14 +14,17 @@ WebRTC transport Ultravox calls use.
 | --- | --- |
 | Linux (x86_64), Windows (x86_64), macOS (arm64, x86_64) | Supported (Linux is tested). On Linux, godot-livekit's release build requires PipeWire, Wayland, and X11 client libraries. |
 | Android (arm64) | godot-livekit ships Android binaries, so this may work, but it hasn't been tested. |
-| Web, iOS | Not supported. godot-livekit doesn't support them yet. |
+| Web | Coming soon. Web support for godot-livekit is in review, and this SDK will follow. |
+| iOS | Not supported. godot-livekit doesn't support it yet. |
 
 ## Installation
 
-1. Install godot-livekit. Download `godot-livekit-release.zip` from its
+1. Install godot-livekit: in the Godot editor's **AssetLib** tab, search for **Godot LiveKit**
+   and install it. (Alternatively, download `godot-livekit-release.zip` from its
    [releases](https://github.com/NodotProject/godot-livekit/releases) and copy its
-   `addons/godot-livekit` folder into your project's `addons/` folder.
-2. Copy this repository's `addons/ultravox` folder into your project's `addons/` folder.
+   `addons/godot-livekit` folder into your project's `addons/` folder.)
+2. Copy this repository's `addons/ultravox` folder into your project's `addons/` folder. (It isn't
+   in the Asset Library yet.)
 3. Enable **Project Settings > Audio > Driver > Enable Input** so calls can use the microphone.
 4. Optionally enable the Ultravox plugin (**Project > Project Settings > Plugins**). The plugin
    only warns about missing setup; the SDK works without it.
@@ -32,17 +35,11 @@ macOS > Privacy > Microphone Usage Description**.
 
 ### Echo cancellation
 
-When players use speakers rather than headphones, the agent's voice (and other game audio)
-reaches the microphone, and the agent may respond to itself. WebRTC's echo cancellation prevents
-this. The SDK uses it automatically when godot-livekit provides the `LiveKitAudioProcessingModule`
-class. That class was added to godot-livekit after its v0.3.3 release. Until a release includes it,
-build godot-livekit from its `main` branch, or tell players to wear headphones. Without the class,
-the SDK logs a warning once and continues without echo cancellation, noise suppression, or gain
-control.
-
-Releases up to v0.3.3 also end the game if LiveKit reports an error while capturing microphone
-audio, which `main` fixes too. The most common cause, audio frames of the wrong size, can't happen
-with this SDK, which always sends exact 10 ms frames.
+At v0.3.3, godot-livekit does not support echo cancellation, so the agent may hear and respond to
+its own audio (and other game audio) unless the player is using headphones. Build godot-livekit
+from its `main` branch if you need echo cancellation. This SDK will add it automatically when
+available. (Building from `main` will also fix a possible game crash caused by LiveKit reporting
+an error while capturing microphone audio.)
 
 ## Quick start
 
@@ -59,9 +56,8 @@ func _ready() -> void:
 
 The session leaves its call automatically when it leaves the scene tree.
 
-Join URLs come from creating a call with the Ultravox API. Create calls on your server, because
-the API key must never ship inside your game. See the [docs](https://docs.ultravox.ai) for more
-info.
+Join URLs come from creating a call with the Ultravox API. Create calls on your server to avoid
+leaking your API key. See the [docs](https://docs.ultravox.ai) for more info.
 
 ## Signals
 

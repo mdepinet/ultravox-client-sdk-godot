@@ -7,9 +7,15 @@ on:
 
 jobs:
   test:
+    name: Test on Godot ${{ matrix.godot-version }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The minimum supported version and the latest stable release.
+        godot-version: ["4.5.2", "4.7.2"]
     env:
-      GODOT_VERSION: 4.5.2
+      GODOT_VERSION: ${{ matrix.godot-version }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Godot
