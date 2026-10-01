@@ -1,0 +1,11 @@
+config_version=5
+
+[application]
+
+config/name="Ultravox Client SDK"
+config/features=PackedStringArray("4.5")
+run/main_scene="res://example/example.tscn"
+
+[audio]
+
+driver/enable_input=true

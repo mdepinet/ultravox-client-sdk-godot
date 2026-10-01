@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Test on Godot ${{ matrix.godot-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The minimum supported version and the latest stable release.
+        godot-version: ["4.5.2", "4.7.2"]
+    env:
+      GODOT_VERSION: ${{ matrix.godot-version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Godot
+        run: |
+          curl -fsSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip -d "$RUNNER_TEMP"
+          echo "GODOT=$RUNNER_TEMP/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        # godot-livekit's Linux build links against its screen capture dependencies.
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q libpipewire-0.3-0 libwayland-client0 libx11-6 libxext6 libxinerama1
+          scripts/setup.sh
+      - name: Run tests
+        # Integration tests are skipped unless the repository provides this secret.
+        env:
+          ULTRAVOX_API_KEY: ${{ secrets.ULTRAVOX_API_KEY }}
+        run: scripts/test.sh
